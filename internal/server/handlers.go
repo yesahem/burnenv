@@ -4,7 +4,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -15,7 +17,7 @@ type dropCreateRequest struct {
 	Ciphertext string `json:"ciphertext"`
 	Salt       string `json:"salt"`
 	IV         string `json:"iv"`
-	KDF       struct {
+	KDF        struct {
 		Algorithm string `json:"algorithm"`
 		Time      uint32 `json:"time"`
 		Memory    uint32 `json:"memory"`
@@ -30,11 +32,9 @@ type dropCreateResponse struct {
 	Link string `json:"link"`
 }
 
-
 type errorResponse struct {
 	Error string `json:"error"`
 }
-
 
 func randomID() string {
 	b := make([]byte, 16)
@@ -59,6 +59,9 @@ func Handler(store *Store, baseURL string) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("POST /v1/drop", func(w http.ResponseWriter, r *http.Request) {
+		// Limit request body size to prevent DoS
+		r.Body = http.MaxBytesReader(w, r.Body, MaxRequestBodyBytes)
+
 		// Server must never log request body
 		if r.Body == nil {
 			writeError(w, http.StatusBadRequest, "missing body")
@@ -66,28 +69,28 @@ func Handler(store *Store, baseURL string) http.Handler {
 		}
 		var raw json.RawMessage
 		if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+			if strings.Contains(err.Error(), "http: request body too large") {
+				writeError(w, http.StatusRequestEntityTooLarge,
+					fmt.Sprintf("request body exceeds %d MB limit", MaxRequestBodyBytes/(1024*1024)))
+				return
+			}
 			writeError(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
-		// Minimal validation: need expiry and max_views
+		// Parse and validate payload
 		var req dropCreateRequest
 		if err := json.Unmarshal(raw, &req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid payload structure")
 			return
 		}
-		if req.Ciphertext == "" || req.Salt == "" || req.IV == "" {
-			writeError(w, http.StatusBadRequest, "missing required fields")
-			return
-		}
-		if req.MaxViews < 1 {
-			req.MaxViews = 1
-		}
-		expiry := time.Unix(req.Expiry, 0)
-		if time.Now().After(expiry) {
-			writeError(w, http.StatusBadRequest, "expiry already passed")
+
+		// Full server-side validation (size, expiry, max_views, required fields)
+		if status, msg := validateRequest(&req); status != 0 {
+			writeError(w, status, msg)
 			return
 		}
 
+		expiry := time.Unix(req.Expiry, 0)
 		id := randomID()
 		store.Put(id, raw, req.MaxViews, expiry)
 

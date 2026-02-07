@@ -185,6 +185,19 @@ burnenv open "http://localhost:8080/v1/drop/<id>" | source /dev/stdin
 - **Server:** Stores opaque encrypted blobs only; cannot decrypt
 - **Burn on read:** GET retrieves and deletes in one atomic step
 
+### Server Limits
+
+The server enforces the following limits for security and stability:
+
+| Limit | Default | Description |
+|-------|---------|-------------|
+| Request body | 2 MB | Total HTTP request size |
+| Encrypted data | ~1.5 MB | Maximum ciphertext size |
+| Expiry time | 1 min – 24 hours | Secret lifetime (server-side) |
+| Max views | 1 – 100 | Retrieval limit (server-side) |
+
+> **Note:** The CLI/TUI enforces stricter client-side limits (2–10 min expiry, 1–5 max views) for typical use cases. The server limits are wider to support scripted/API usage.
+
 ---
 
 ## API Endpoints
