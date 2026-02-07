@@ -22,6 +22,7 @@ const (
 	secStepSecrets secureStep = iota
 	secStepPassword
 	secStepMaxViews
+	secStepExpiry
 	secStepResult
 )
 
@@ -33,6 +34,8 @@ type secureModel struct {
 	passwordInput textinput.Model
 	maxViews      int
 	maxViewsIdx   int
+	expiryMinutes int
+	expiryIdx     int
 	secrets       string
 	password      string
 	secureKey     string
@@ -62,6 +65,8 @@ func newSecureModel(width, height int) secureModel {
 		passwordInput: pi,
 		maxViews:      1,
 		maxViewsIdx:   0,
+		expiryMinutes: 3,
+		expiryIdx:     1,
 		serverURL:     os.Getenv("BURNENV_SERVER"),
 	}
 }
@@ -89,7 +94,7 @@ func (m secureModel) doCreate() tea.Msg {
 		return secureResult{err: err}
 	}
 
-	expiry := time.Now().Add(5 * time.Minute).Unix()
+	expiry := time.Now().Add(time.Duration(m.expiryMinutes) * time.Minute).Unix()
 	payload.Expiry = expiry
 	payload.MaxViews = m.maxViews
 
@@ -157,9 +162,10 @@ func (m secureModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Handle max-views step FIRST before any input forwarding
 		if m.step == secStepMaxViews {
-			// Confirm with Enter or Space
+			// Confirm with Enter or Space -> advance to expiry step
 			if isEnter || isSpace {
-				return &m, m.doCreate
+				m.step = secStepExpiry
+				return &m, nil
 			}
 			// Navigation
 			switch keyStr {
@@ -178,6 +184,49 @@ func (m secureModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "1", "2", "3", "4", "5":
 				m.maxViews = int(keyStr[0] - '0')
 				m.maxViewsIdx = m.maxViews - 1
+				return &m, nil
+			}
+			// Ctrl+S also confirms -> advance to expiry step
+			if keyStr == "ctrl+s" {
+				m.step = secStepExpiry
+				return &m, nil
+			}
+			return &m, nil
+		}
+
+		// Handle expiry step
+		if m.step == secStepExpiry {
+			// Confirm with Enter or Space -> create the secret
+			if isEnter || isSpace {
+				return &m, m.doCreate
+			}
+			// Navigation
+			switch keyStr {
+			case "up", "k":
+				if m.expiryIdx > 0 {
+					m.expiryIdx--
+					m.expiryMinutes = m.expiryIdx + 2
+				}
+				return &m, nil
+			case "down", "j":
+				if m.expiryIdx < 8 {
+					m.expiryIdx++
+					m.expiryMinutes = m.expiryIdx + 2
+				}
+				return &m, nil
+			case "2", "3", "4", "5", "6", "7", "8", "9":
+				m.expiryMinutes = int(keyStr[0] - '0')
+				m.expiryIdx = m.expiryMinutes - 2
+				return &m, nil
+			case "0":
+				// 0 selects 10 minutes
+				m.expiryMinutes = 10
+				m.expiryIdx = 8
+				return &m, nil
+			case "1":
+				// 1+0 = 10; just set to 10 for convenience
+				m.expiryMinutes = 10
+				m.expiryIdx = 8
 				return &m, nil
 			}
 			// Ctrl+S also confirms
@@ -282,7 +331,7 @@ func (m secureModel) View() string {
 		pwLen := len(m.passwordInput.Value())
 		if pwLen > 0 {
 			b.WriteString("\n")
-			b.WriteString(Success.Render("✓ "+strings.Repeat("●", pwLen)+" ("+fmt.Sprintf("%d", pwLen)+" chars)"))
+			b.WriteString(Success.Render("✓ " + strings.Repeat("●", pwLen) + " (" + fmt.Sprintf("%d", pwLen) + " chars)"))
 		}
 		b.WriteString("\n\n")
 		b.WriteString(Muted.Render("Enter to continue • Esc to cancel"))
@@ -296,13 +345,31 @@ func (m secureModel) View() string {
 				marker = "> "
 			}
 			if i == m.maxViews {
-				b.WriteString(Focused.Render(marker + fmt.Sprintf("%d person(s) can view", i)) + "\n")
+				b.WriteString(Focused.Render(marker+fmt.Sprintf("%d person(s) can view", i)) + "\n")
 			} else {
-				b.WriteString(Prompt.Render(marker + fmt.Sprintf("%d person(s) can view", i)) + "\n")
+				b.WriteString(Prompt.Render(marker+fmt.Sprintf("%d person(s) can view", i)) + "\n")
 			}
 		}
 		b.WriteString("\n")
-		b.WriteString(Muted.Render("↑/↓ or 1-5 to select • Enter or Space to create"))
+		b.WriteString(Muted.Render("↑/↓ or 1-5 to select • Enter or Space to continue"))
+
+	case secStepExpiry:
+		b.WriteString(Title.Render("Secure env") + "\n\n")
+		b.WriteString(Prompt.Render("Auto-expiry time (2-10 min):") + "\n\n")
+		for i := 2; i <= 10; i++ {
+			marker := "  "
+			if i == m.expiryMinutes {
+				marker = "> "
+			}
+			label := fmt.Sprintf("%d minutes", i)
+			if i == m.expiryMinutes {
+				b.WriteString(Focused.Render(marker+label) + "\n")
+			} else {
+				b.WriteString(Prompt.Render(marker+label) + "\n")
+			}
+		}
+		b.WriteString("\n")
+		b.WriteString(Muted.Render("↑/↓ or 2-9,0 to select • Enter or Space to generate"))
 
 	case secStepResult:
 		if m.err != nil {
@@ -312,7 +379,7 @@ func (m secureModel) View() string {
 			b.WriteString(Success.Render("✓ Secrets secured.\n\n"))
 			b.WriteString("Secure key:\n")
 			b.WriteString(Link.Render(m.secureKey) + "\n\n")
-			b.WriteString(Muted.Render("Share this key with up to " + fmt.Sprintf("%d", m.maxViews) + " person(s). Enter or Esc to go back"))
+			b.WriteString(Muted.Render(fmt.Sprintf("Expires in %d min • Share with up to %d person(s). Enter or Esc to go back", m.expiryMinutes, m.maxViews)))
 		}
 	}
 

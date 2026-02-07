@@ -74,7 +74,7 @@ burnenv
 Launching the binary without arguments opens the full-screen TUI with two options:
 
 1. **Retrieve env** – Paste secure key → Enter password → Copy or export to `.env`
-2. **Secure env** – Paste secrets → Lock with password → Set max viewers (1–5) → Get secure key
+2. **Secure env** – Paste secrets → Lock with password → Set max viewers (1–5) → Set expiry time (2–10 min) → Get secure key
 
 ### Launch the server (optional)
 
@@ -111,7 +111,7 @@ burnenv open "http://localhost:8080/v1/drop/<id>"
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--expiry` | 3 | Expiry in minutes (2–5) |
+| `--expiry` | 3 | Expiry in minutes (2–10) |
 | `--max-views` | 1 | Max retrievals before destruction |
 | `--password` | — | Password (prefer `BURNENV_PASSWORD` env) |
 | `--server` | — | Server base URL |

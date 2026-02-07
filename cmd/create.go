@@ -26,7 +26,7 @@ var (
 
 func init() {
 	rootCmd.AddCommand(createCmd)
-	createCmd.Flags().IntVar(&expiryMinutes, "expiry", 3, "Expiry in minutes (2-5)")
+	createCmd.Flags().IntVar(&expiryMinutes, "expiry", 3, "Expiry in minutes (2-10)")
 	createCmd.Flags().IntVar(&maxViews, "max-views", 1, "Maximum number of views before destruction")
 	createCmd.Flags().StringVar(&password, "password", "", "Password (prefer BURNENV_PASSWORD env; avoid passing on CLI)")
 	createCmd.Flags().StringVar(&serverURL, "server", "", "Server base URL (e.g. http://localhost:8080). Omit for local mock.")
@@ -65,8 +65,8 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Validate and get options
-	if expiryMinutes < 2 || expiryMinutes > 5 {
-		return fmt.Errorf("expiry must be between 2 and 5 minutes")
+	if expiryMinutes < 2 || expiryMinutes > 10 {
+		return fmt.Errorf("expiry must be between 2 and 10 minutes")
 	}
 	if maxViews < 1 {
 		maxViews = 1
@@ -120,9 +120,9 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	// Output
 	if jsonOutput {
 		out := struct {
-			Link           string `json:"link"`
-			ExpiryMinutes  int    `json:"expiry_minutes"`
-			MaxViews       int    `json:"max_views"`
+			Link          string `json:"link"`
+			ExpiryMinutes int    `json:"expiry_minutes"`
+			MaxViews      int    `json:"max_views"`
 		}{Link: link, ExpiryMinutes: expiryMinutes, MaxViews: maxViews}
 		enc := json.NewEncoder(os.Stdout)
 		return enc.Encode(out)
